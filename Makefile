@@ -222,8 +222,12 @@ staging-seed: check-staging ## Seed test data to running staging database
 		exit 1; \
 	fi
 
-staging-down: ## Stop staging services
+staging-down: ## Stop staging services (use staging-down-ssl if using SSL)
 	docker compose -f $(STAGING_COMPOSE) --env-file .env.db.staging down
+
+staging-down-ssl: ## Stop staging services including nginx (use after staging-up-ssl)
+	docker compose -f $(STAGING_COMPOSE) --env-file .env.db.staging --profile ssl --profile seed down
+	@echo "✓ All services stopped (including nginx)"
 
 staging-logs: ## View staging logs (follow)
 	docker compose -f $(STAGING_COMPOSE) --env-file .env.db.staging logs -f

@@ -33,7 +33,11 @@ upstream api_backend {
 }
 
 # ===========================================================================
-# HTTP Server (Redirect to HTTPS)
+# HTTP Server (Redirect to HTTPS or serve if behind proxy)
+# ===========================================================================
+# This server handles HTTP traffic:
+# - If X-Forwarded-Proto: https (behind Cloudflare/proxy) -> serve directly
+# - Otherwise -> redirect to HTTPS
 # ===========================================================================
 server {
     listen 80;
@@ -47,9 +51,42 @@ server {
         add_header Content-Type text/plain;
     }
 
-    # Redirect all other HTTP traffic to HTTPS
+    # Main application
     location / {
-        return 301 https://$host$request_uri;
+        # Redirect to HTTPS if not behind a proxy
+        # $redirect_to_https is set by map in nginx.conf (empty = behind proxy)
+        if ($redirect_to_https) {
+            return 301 https://$host$request_uri;
+        }
+
+        # Serve request if behind proxy (Cloudflare Flexible SSL, etc.)
+        proxy_pass http://ui_backend;
+        proxy_http_version 1.1;
+
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection 'upgrade';
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto https;
+        proxy_set_header X-Forwarded-Host $host;
+
+        proxy_connect_timeout 60s;
+        proxy_send_timeout 60s;
+        proxy_read_timeout 60s;
+        proxy_cache_bypass $http_upgrade;
+        proxy_buffering off;
+    }
+
+    # Next.js Static Assets (when behind proxy)
+    location /_next/static/ {
+        if ($redirect_to_https) {
+            return 301 https://$host$request_uri;
+        }
+        proxy_pass http://ui_backend;
+        expires 1y;
+        add_header Cache-Control "public, immutable";
+        access_log off;
     }
 }
 

@@ -252,7 +252,8 @@ This exposes port 3000 for your external reverse proxy to handle SSL termination
 | `make staging-up-ssl` | Start with nginx/HTTPS |
 | `make staging-up-ssl-seed` | Start with nginx/HTTPS + test data |
 | `make staging-seed` | Seed test data to running database |
-| `make staging-down` | Stop all services |
+| `make staging-down` | Stop services (HTTP mode) |
+| `make staging-down-ssl` | Stop services including nginx (SSL mode) |
 | `make staging-logs` | View all logs |
 | `make staging-ps` | Show running containers |
 | `make staging-restart` | Restart all services |

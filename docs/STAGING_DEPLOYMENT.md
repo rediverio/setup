@@ -437,12 +437,14 @@ make nginx-logs-staging
 ### Stop SSL Mode
 
 ```bash
-# Stop all services including nginx
-make staging-down
+# IMPORTANT: Use staging-down-ssl to properly remove nginx container
+make staging-down-ssl
 
 # Start without SSL (direct UI access)
 make staging-up
 ```
+
+**Note:** Using `make staging-down` instead of `make staging-down-ssl` may cause "network not found" errors on next SSL startup. See Troubleshooting section for details.
 
 ---
 
@@ -510,8 +512,9 @@ make staging-up-ssl-seed     # With Nginx/SSL + test data (HTTPS)
 # Seed data to running database
 make staging-seed
 
-# Stop
-make staging-down
+# Stop (use the correct one for your mode)
+make staging-down       # For HTTP mode
+make staging-down-ssl   # For SSL mode (IMPORTANT: prevents network errors)
 
 # Restart
 make staging-restart
@@ -648,6 +651,44 @@ docker compose -f docker-compose.staging.yml --env-file .env.db.staging --profil
 make staging-down
 docker network prune -f
 make staging-up-seed
+```
+
+#### 8. "Network not found" error when starting nginx/SSL
+
+This error occurs when Docker caches a stale network ID for the nginx container:
+
+```
+Error response from daemon: failed to set up container networking: network xxx not found
+```
+
+**Solution:** You must stop services with the same profile that was used to start nginx:
+
+```bash
+# IMPORTANT: Use --profile ssl to properly remove nginx container
+docker compose -f docker-compose.staging.yml --env-file .env.db.staging --profile ssl down
+
+# Remove nginx container if it still exists
+docker rm -f rediver-nginx 2>/dev/null || true
+
+# Clean up Docker networks
+docker network prune -f
+
+# Start again
+make staging-up-ssl
+```
+
+**Why this happens:**
+- When nginx is started with `--profile ssl`, it gets associated with a specific network ID
+- If services are stopped without `--profile ssl`, the nginx container is not properly removed
+- Docker caches the old network ID, causing "network not found" error on next start
+
+**Prevention:** Use the correct stop command for your mode:
+```bash
+# If you started with HTTP mode (make staging-up):
+make staging-down
+
+# If you started with SSL mode (make staging-up-ssl):
+make staging-down-ssl
 ```
 
 ### Debug Mode
