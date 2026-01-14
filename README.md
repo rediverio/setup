@@ -29,12 +29,17 @@ Rediver is a multi-tenant security platform with a Go backend API and Next.js fr
 
 ## Environment Files
 
-| Environment | DB Config | API Config | UI Config |
-|-------------|-----------|------------|-----------|
-| Staging | `.env.db.staging` | `.env.api.staging` | `.env.ui.staging` |
-| Production | `.env.db.prod` | `.env.api.prod` | `.env.ui.prod` |
+Environment example files are located in `environments/` folder:
 
-**Note:** Database credentials are separated into `.env.db.*` for security.
+| Environment | DB Config | API Config | UI Config | Nginx Config |
+|-------------|-----------|------------|-----------|--------------|
+| Staging | `.env.db.staging` | `.env.api.staging` | `.env.ui.staging` | `.env.nginx.staging` |
+| Production | `.env.db.prod` | `.env.api.prod` | `.env.ui.prod` | `.env.nginx.prod` |
+
+**Note:**
+- Database credentials are separated into `.env.db.*` for security
+- Nginx config (`.env.nginx.*`) is only needed when using SSL profile
+- Example files are in `environments/` folder, copy to root directory for use
 
 ## Docker Images
 
@@ -59,10 +64,10 @@ Images are pulled from Docker Hub (`rediverio`):
 ```bash
 cd rediver-setup
 
-# Copy environment templates
-cp .env.db.staging.example .env.db.staging
-cp .env.api.staging.example .env.api.staging
-cp .env.ui.staging.example .env.ui.staging
+# Copy environment templates from environments folder
+cp environments/.env.db.staging.example .env.db.staging
+cp environments/.env.api.staging.example .env.api.staging
+cp environments/.env.ui.staging.example .env.ui.staging
 
 # Generate secrets
 make generate-secrets
@@ -110,13 +115,29 @@ make staging-up-seed
 - Email: `admin@rediver.io`
 - Password: `Password123`
 
-### 5. Debug Mode (Optional)
+### 5. HTTPS/SSL Mode (Optional)
+
+To run staging with HTTPS (useful for testing OAuth, secure cookies):
+
+```bash
+# Generate self-signed certificate
+make init-ssl
+
+# Start with nginx/SSL
+make staging-up-ssl
+
+# Access via HTTPS
+open https://localhost
+# Note: Browser will show certificate warning (expected for self-signed)
+```
+
+### 6. Debug Mode (Optional)
 
 To expose database and Redis ports for debugging:
 
 ```bash
 # Start with debug profile
-docker compose -f docker-compose.staging.yml --profile debug up -d
+docker compose -f docker-compose.staging.yml --env-file .env.db.staging --profile debug up -d
 
 # Access database
 psql -h localhost -p 5432 -U rediver -d rediver
@@ -129,67 +150,94 @@ redis-cli -h localhost -p 6379
 
 ## Quick Start (Production)
 
-### 1. Setup Environment Files
+### Docker Compose Options
+
+| File | Nginx | SSL | Use Case |
+|------|-------|-----|----------|
+| `docker-compose.prod.yml` | Yes | Yes | Full production with built-in SSL |
+| `docker-compose.prod-simple.yml` | No | No | External proxy (AWS ALB, Traefik, etc.) |
+
+### Option A: Production with Nginx/SSL (Recommended)
+
+#### 1. Setup Environment Files
 
 ```bash
 cd rediver-setup
 
-# Copy environment templates
-cp .env.db.prod.example .env.db.prod
-cp .env.api.prod.example .env.api.prod
-cp .env.ui.prod.example .env.ui.prod
+# Copy environment templates from environments folder
+cp environments/.env.db.prod.example .env.db.prod
+cp environments/.env.api.prod.example .env.api.prod
+cp environments/.env.ui.prod.example .env.ui.prod
 
 # Generate secrets
 make generate-secrets
 ```
 
-### 2. Configure Environment
+#### 2. Configure Environment
 
-Edit `.env.db.prod` and update:
-
+Edit `.env.db.prod`:
 ```env
-# Database
 DB_PASSWORD=<CHANGE_ME_STRONG_PASSWORD>
-
-# Redis
 REDIS_PASSWORD=<CHANGE_ME_STRONG_PASSWORD>
 ```
 
-Edit `.env.api.prod` and update ALL `<CHANGE_ME>` values:
-
+Edit `.env.api.prod`:
 ```env
-# Authentication
 AUTH_JWT_SECRET=<CHANGE_ME_GENERATE_WITH_OPENSSL>
-
-# CORS
 CORS_ALLOWED_ORIGINS=https://your-domain.com
-
-# SMTP
-SMTP_HOST=<CHANGE_ME_SMTP_HOST>
-SMTP_USER=<CHANGE_ME>
-SMTP_PASSWORD=<CHANGE_ME>
 ```
 
-Edit `.env.ui.prod` and update:
-
+Edit `.env.ui.prod`:
 ```env
-# URLs
 NEXT_PUBLIC_APP_URL=https://your-domain.com
-
-# Security
 CSRF_SECRET=<CHANGE_ME>
 SECURE_COOKIES=true
 ```
 
-### 3. Start Production
+#### 3. Setup SSL Certificates
+
+See [nginx/README.md](nginx/README.md) for detailed SSL setup.
 
 ```bash
-# Pull and start
-make prod-up
+# Option A: Let's Encrypt (recommended)
+sudo certbot certonly --standalone -d your-domain.com
+sudo cp /etc/letsencrypt/live/your-domain.com/fullchain.pem nginx/ssl/cert.pem
+sudo cp /etc/letsencrypt/live/your-domain.com/privkey.pem nginx/ssl/key.pem
+
+# Option B: Self-signed (testing only)
+openssl req -x509 -nodes -days 365 -newkey rsa:2048 \
+  -keyout nginx/ssl/key.pem -out nginx/ssl/cert.pem \
+  -subj "/CN=localhost"
+```
+
+#### 4. Update Nginx Config
+
+```bash
+# Replace domain in nginx config
+sed -i 's/your-domain.com/yourdomain.com/g' nginx/nginx.conf
+```
+
+#### 5. Start Production
+
+```bash
+docker compose -f docker-compose.prod.yml up -d
 
 # With specific version
-VERSION=v0.2.0 make prod-up
+VERSION=v0.2.0 docker compose -f docker-compose.prod.yml up -d
 ```
+
+### Option B: Production without Nginx (External Proxy)
+
+Use this when you have an external reverse proxy (AWS ALB, GCP Load Balancer, Traefik, Kubernetes Ingress).
+
+```bash
+# Setup environment (same as above steps 1-2)
+
+# Start without nginx
+docker compose -f docker-compose.prod-simple.yml up -d
+```
+
+This exposes port 3000 for your external reverse proxy to handle SSL termination.
 
 ---
 
@@ -201,11 +249,13 @@ VERSION=v0.2.0 make prod-up
 |---------|-------------|
 | `make staging-up` | Start staging environment |
 | `make staging-up-seed` | Start with test data |
+| `make staging-up-ssl` | Start with nginx/HTTPS |
 | `make staging-down` | Stop all services |
 | `make staging-logs` | View all logs |
 | `make staging-ps` | Show running containers |
 | `make staging-restart` | Restart all services |
 | `make staging-pull` | Pull latest images |
+| `make staging-clean` | Stop and remove volumes (reset DB) |
 
 ### Production
 
@@ -227,12 +277,22 @@ VERSION=v0.2.0 make prod-up
 | `make db-reset` | Reset database (WARNING: deletes all data) |
 | `make db-migrate` | Run migrations manually |
 
+### SSL/HTTPS
+
+| Command | Description |
+|---------|-------------|
+| `make init-ssl` | Generate self-signed certificate (staging/testing) |
+| `make init-ssl-letsencrypt` | Show Let's Encrypt setup instructions |
+| `make ssl-renew` | Reload nginx after certificate renewal |
+| `make staging-up-ssl` | Start staging with nginx/SSL |
+
 ### Utility
 
 | Command | Description |
 |---------|-------------|
 | `make generate-secrets` | Generate secure secrets |
-| `make status` | Show service status and URLs |
+| `make status-staging` | Show staging status and URLs |
+| `make status-prod` | Show production status |
 | `make help` | Show all commands |
 
 ---
@@ -242,13 +302,23 @@ VERSION=v0.2.0 make prod-up
 ```
 rediver-setup/
 ├── docker-compose.staging.yml     # Staging deployment
-├── docker-compose.prod.yml        # Production deployment
-├── .env.db.staging.example        # DB credentials (staging)
-├── .env.db.prod.example           # DB credentials (production)
-├── .env.api.staging.example       # API config (staging)
-├── .env.api.prod.example          # API config (production)
-├── .env.ui.staging.example        # UI config (staging)
-├── .env.ui.prod.example           # UI config (production)
+├── docker-compose.prod.yml        # Production with Nginx/SSL
+├── docker-compose.prod-simple.yml # Production without Nginx (external proxy)
+├── environments/                  # Environment example files
+│   ├── .env.db.staging.example    # DB credentials (staging)
+│   ├── .env.db.prod.example       # DB credentials (production)
+│   ├── .env.api.staging.example   # API config (staging)
+│   ├── .env.api.prod.example      # API config (production)
+│   ├── .env.ui.staging.example    # UI config (staging)
+│   ├── .env.ui.prod.example       # UI config (production)
+│   ├── .env.nginx.staging.example # Nginx config (staging)
+│   └── .env.nginx.prod.example    # Nginx config (production)
+├── nginx/                         # Nginx configuration
+│   ├── nginx.conf                 # Main nginx config
+│   ├── templates/                 # Server block templates
+│   │   └── default.conf.template  # Uses ${NGINX_HOST} variable
+│   ├── ssl/                       # SSL certificates (gitignored)
+│   └── README.md                  # Nginx setup guide
 ├── Makefile                       # Convenience commands
 ├── README.md                      # This file
 └── docs/

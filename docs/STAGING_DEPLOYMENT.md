@@ -13,6 +13,7 @@ Comprehensive guide for deploying Rediver Platform to staging environment.
 - [Step-by-Step Deployment](#step-by-step-deployment)
 - [Configuration](#configuration)
 - [Seeding Data](#seeding-data)
+- [HTTPS/SSL Mode](#httpsssl-mode)
 - [Debug Mode](#debug-mode)
 - [Management Commands](#management-commands)
 - [Troubleshooting](#troubleshooting)
@@ -59,10 +60,10 @@ docker compose version
 git clone <your-repo-url>
 cd rediver-setup
 
-# 2. Create environment files
-cp .env.db.staging.example .env.db.staging
-cp .env.api.staging.example .env.api.staging
-cp .env.ui.staging.example .env.ui.staging
+# 2. Create environment files from templates
+cp environments/.env.db.staging.example .env.db.staging
+cp environments/.env.api.staging.example .env.api.staging
+cp environments/.env.ui.staging.example .env.ui.staging
 
 # 3. Generate secure secrets
 make generate-secrets
@@ -92,20 +93,20 @@ cd rediver-setup
 
 # Verify structure
 ls -la
-# Should see: docker-compose.staging.yml, Makefile, .env.*.example files
+# Should see: docker-compose.staging.yml, Makefile, environments/ folder
 ```
 
 ### Step 2: Create Environment Files
 
 ```bash
 # Copy DB configuration (credentials)
-cp .env.db.staging.example .env.db.staging
+cp environments/.env.db.staging.example .env.db.staging
 
 # Copy API configuration
-cp .env.api.staging.example .env.api.staging
+cp environments/.env.api.staging.example .env.api.staging
 
 # Copy UI configuration
-cp .env.ui.staging.example .env.ui.staging
+cp environments/.env.ui.staging.example .env.ui.staging
 
 # Generate secure secrets
 make generate-secrets
@@ -321,6 +322,119 @@ make db-seed
 
 ---
 
+## HTTPS/SSL Mode
+
+For staging environments that require HTTPS (e.g., testing OAuth, secure cookies), you can enable the built-in Nginx reverse proxy with SSL.
+
+### Option 1: Quick Start with Self-Signed Certificate
+
+```bash
+# 1. Generate self-signed certificate (for testing only)
+openssl req -x509 -nodes -days 365 -newkey rsa:2048 \
+  -keyout nginx/ssl/key.pem \
+  -out nginx/ssl/cert.pem \
+  -subj "/CN=localhost"
+
+# 2. Start staging with SSL
+make staging-up-ssl
+
+# 3. Access via HTTPS
+open https://localhost
+# Note: Browser will show certificate warning (expected for self-signed)
+```
+
+### Option 2: With Let's Encrypt Certificate
+
+```bash
+# 1. Obtain certificate (run on server with domain pointing to it)
+sudo certbot certonly --standalone -d staging.yourdomain.com
+
+# 2. Copy certificates
+sudo cp /etc/letsencrypt/live/staging.yourdomain.com/fullchain.pem nginx/ssl/cert.pem
+sudo cp /etc/letsencrypt/live/staging.yourdomain.com/privkey.pem nginx/ssl/key.pem
+
+# 3. Update nginx config with your domain
+sed -i 's/your-domain.com/staging.yourdomain.com/g' nginx/nginx.conf
+
+# 4. Start staging with SSL
+make staging-up-ssl
+
+# 5. Update environment for HTTPS
+# .env.api.staging
+CORS_ALLOWED_ORIGINS=https://staging.yourdomain.com
+
+# .env.ui.staging
+NEXT_PUBLIC_APP_URL=https://staging.yourdomain.com
+SECURE_COOKIES=true
+
+# 6. Restart to apply changes
+make staging-restart
+```
+
+### SSL Architecture
+
+```
+                    Internet/Browser
+                          │
+                          ▼
+                 ┌─────────────────┐
+                 │   Nginx Proxy   │ :80, :443 (public)
+                 │   SSL/TLS       │
+                 └────────┬────────┘
+                          │
+            Docker Network (internal)
+                          │
+                          ▼
+                 ┌─────────────────┐
+                 │   UI (Next.js)  │ :3000 (internal)
+                 │   BFF Proxy     │
+                 └────────┬────────┘
+                          │
+                          ▼
+                 ┌─────────────────┐
+                 │   API (Go)      │ :8080 (internal)
+                 └────────┬────────┘
+                          │
+           ┌──────────────┴──────────────┐
+           ▼                             ▼
+    ┌───────────┐                 ┌───────────┐
+    │ PostgreSQL│                 │   Redis   │
+    └───────────┘                 └───────────┘
+```
+
+### SSL Port Configuration
+
+| Service | Internal Port | External Port | Notes |
+|---------|---------------|---------------|-------|
+| Nginx | 80, 443 | 80, 443 | Only with `--profile ssl` |
+| UI (Next.js) | 3000 | Not exposed | Via nginx when SSL enabled |
+| API (Go) | 8080 | Not exposed | Internal only |
+
+### Nginx Management Commands
+
+```bash
+# Test nginx configuration
+make nginx-test-staging
+
+# Reload nginx (after config changes)
+make nginx-reload-staging
+
+# View nginx logs
+make nginx-logs-staging
+```
+
+### Stop SSL Mode
+
+```bash
+# Stop all services including nginx
+make staging-down
+
+# Start without SSL (direct UI access)
+make staging-up
+```
+
+---
+
 ## Debug Mode
 
 By default, database and Redis ports are NOT exposed externally for security. Use debug mode when you need direct access.
@@ -379,19 +493,25 @@ make staging-up
 # Start
 make staging-up          # Without test data
 make staging-up-seed     # With test data
+make staging-up-ssl      # With Nginx/SSL (requires certificates)
 
 # Stop
 make staging-down
 
 # Restart
 make staging-restart
+make staging-restart-api # Restart API only
+make staging-restart-ui  # Restart UI only
 
 # Status
 make staging-ps
-make status
+make status-staging
 
 # Pull latest images
 make staging-pull
+
+# Upgrade to new version
+VERSION=v0.2.0 make staging-upgrade
 ```
 
 ### Logs
@@ -400,35 +520,42 @@ make staging-pull
 # All logs
 make staging-logs
 
+# Service-specific logs
+make staging-logs-api    # API logs only
+make staging-logs-ui     # UI logs only
+
+# Nginx logs (when using SSL profile)
+make nginx-logs-staging
+
 # Docker compose directly
-docker compose -f docker-compose.staging.yml logs -f api
-docker compose -f docker-compose.staging.yml logs -f ui --tail=100
+docker compose -f docker-compose.staging.yml --env-file .env.db.staging logs -f api
+docker compose -f docker-compose.staging.yml --env-file .env.db.staging logs -f ui --tail=100
 ```
 
 ### Database
 
 ```bash
-# Open psql shell (requires debug profile)
-make db-shell
+# Open psql shell
+make db-shell-staging
 
 # Run migrations
-make db-migrate
+make db-migrate-staging
 
 # Seed test data
-make db-seed
+make db-seed-staging
 
-# Reset database (WARNING: deletes all data)
-make db-reset
+# Redis CLI
+make redis-shell-staging
 ```
 
 ### Cleanup
 
 ```bash
-# Stop and remove containers + volumes
+# Stop and remove containers + volumes (resets database!)
 make staging-clean
 
 # Prune unused Docker resources
-make staging-prune
+make prune
 ```
 
 ---
@@ -441,9 +568,9 @@ make staging-prune
 
 ```bash
 # Solution: Create environment files
-cp .env.db.staging.example .env.db.staging
-cp .env.api.staging.example .env.api.staging
-cp .env.ui.staging.example .env.ui.staging
+cp environments/.env.db.staging.example .env.db.staging
+cp environments/.env.api.staging.example .env.api.staging
+cp environments/.env.ui.staging.example .env.ui.staging
 # Then update secrets
 ```
 
@@ -496,7 +623,16 @@ UI_PORT=3001
 ```bash
 # Database is NOT exposed by default
 # Use debug profile to expose:
-docker compose -f docker-compose.staging.yml --profile debug up -d
+docker compose -f docker-compose.staging.yml --env-file .env.db.staging --profile debug up -d
+```
+
+#### 7. "Network not found" error
+
+```bash
+# Docker network state can get corrupted. Clean up and restart:
+make staging-down
+docker network prune -f
+make staging-up-seed
 ```
 
 ### Debug Mode
@@ -565,9 +701,9 @@ rsync -avz --exclude '.git' \
 
 ```bash
 # Create env files
-cp .env.db.staging.example .env.db.staging
-cp .env.api.staging.example .env.api.staging
-cp .env.ui.staging.example .env.ui.staging
+cp environments/.env.db.staging.example .env.db.staging
+cp environments/.env.api.staging.example .env.api.staging
+cp environments/.env.ui.staging.example .env.ui.staging
 
 # Generate secrets
 make generate-secrets
@@ -662,9 +798,9 @@ make staging-restart
 ### Pre-Deployment
 
 - [ ] Docker & Docker Compose installed
-- [ ] `.env.db.staging` created from example
-- [ ] `.env.api.staging` created from example
-- [ ] `.env.ui.staging` created from example
+- [ ] `.env.db.staging` created from example (`cp environments/.env.db.staging.example .env.db.staging`)
+- [ ] `.env.api.staging` created from example (`cp environments/.env.api.staging.example .env.api.staging`)
+- [ ] `.env.ui.staging` created from example (`cp environments/.env.ui.staging.example .env.ui.staging`)
 - [ ] `DB_PASSWORD` updated in `.env.db.staging`
 - [ ] `AUTH_JWT_SECRET` updated (min 64 chars)
 - [ ] `CSRF_SECRET` updated (min 32 chars)
@@ -676,13 +812,22 @@ make staging-restart
 - [ ] All services healthy (`make staging-ps`)
 - [ ] UI accessible at configured URL
 - [ ] Can login with test credentials
-- [ ] API health check passes
+- [ ] API health check passes (`curl http://localhost:3000/api/health`)
+
+### For HTTPS/SSL Mode (Optional)
+
+- [ ] SSL certificates placed in `nginx/ssl/` (cert.pem, key.pem)
+- [ ] Domain updated in `nginx/nginx.conf`
+- [ ] `CORS_ALLOWED_ORIGINS` updated for HTTPS
+- [ ] `NEXT_PUBLIC_APP_URL` updated for HTTPS
+- [ ] `SECURE_COOKIES=true` in `.env.ui.staging`
+- [ ] Start with `make staging-up-ssl`
 
 ### For Remote Server
 
-- [ ] Firewall configured (port 3000)
-- [ ] (Optional) Nginx reverse proxy setup
-- [ ] (Optional) SSL certificate installed
+- [ ] Firewall configured (port 3000, or 80/443 for SSL mode)
+- [ ] (Optional) Use built-in nginx (`make staging-up-ssl`)
+- [ ] SSL certificate installed
 - [ ] `SECURE_COOKIES=true` if using HTTPS
 
 ---

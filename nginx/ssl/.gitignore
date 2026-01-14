@@ -1,0 +1,4 @@
+# SSL certificates - never commit to git
+*.pem
+*.crt
+*.key

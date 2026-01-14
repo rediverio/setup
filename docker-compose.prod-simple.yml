@@ -1,7 +1,11 @@
 # =============================================================================
-# Docker Compose - Production Environment
+# Docker Compose - Production (Without Nginx)
 # =============================================================================
-# Production deployment with Nginx reverse proxy, SSL/TLS, and security hardening.
+# Use this when you have an external reverse proxy handling SSL termination:
+#   - AWS ALB, GCP Load Balancer, Azure App Gateway
+#   - Kubernetes Ingress
+#   - Traefik, Caddy as external proxy
+#   - Cloudflare Tunnel
 #
 # Images are pulled from Docker Hub:
 #   - rediverio/rediver-api:<version>
@@ -15,89 +19,25 @@
 #
 #   2. Update ALL <CHANGE_ME> values in env files
 #
-#   3. Setup SSL certificates (see nginx/README.md)
-#
-#   4. Update nginx/nginx.conf with your domain
-#
-#   5. Run:
-#      docker compose -f docker-compose.prod.yml up -d
-#
-# With specific version:
-#   VERSION=v0.2.0 docker compose -f docker-compose.prod.yml up -d
+#   3. Run:
+#      docker compose -f docker-compose.prod-simple.yml up -d
 #
 # Commands:
-#   Start:      docker compose -f docker-compose.prod.yml up -d
-#   Logs:       docker compose -f docker-compose.prod.yml logs -f
-#   Stop:       docker compose -f docker-compose.prod.yml down
-#   Pull new:   docker compose -f docker-compose.prod.yml pull
+#   Start:      docker compose -f docker-compose.prod-simple.yml up -d
+#   Logs:       docker compose -f docker-compose.prod-simple.yml logs -f
+#   Stop:       docker compose -f docker-compose.prod-simple.yml down
 #
 # Services:
-#   - nginx:     Nginx reverse proxy (ports 80, 443)
 #   - postgres:  PostgreSQL 17 database (internal only)
 #   - redis:     Redis 7 cache (internal only)
 #   - migrate:   Runs migrations (exits after completion)
 #   - api:       Backend API (internal only)
-#   - ui:        Frontend UI (internal only, via nginx)
+#   - ui:        Frontend UI (port 3000)
 #
-# Security Notes:
-#   - Database and Redis are NOT exposed externally
-#   - Only nginx is accessible from outside (ports 80, 443)
-#   - SSL/TLS termination at nginx
-#   - HTTP automatically redirects to HTTPS
-#   - Security hardening enabled (no-new-privileges, read-only where possible)
+# For full production with built-in Nginx/SSL, use: docker-compose.prod.yml
 # =============================================================================
 
 services:
-  # ---------------------------------------------------------------------------
-  # Nginx Reverse Proxy (SSL Termination)
-  # ---------------------------------------------------------------------------
-  # Environment Variables:
-  #   - NGINX_HOST: Server hostname (REQUIRED for production)
-  #
-  # Usage:
-  #   NGINX_HOST=example.com docker compose -f docker-compose.prod.yml up -d
-  nginx:
-    image: nginx:1.27-alpine
-    container_name: rediver-nginx
-    restart: always
-    ports:
-      - "80:80"
-      - "443:443"
-    env_file:
-      - .env.nginx.prod
-    environment:
-      - NGINX_HOST=${NGINX_HOST:?NGINX_HOST is required - set in .env.nginx.prod}
-    volumes:
-      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
-      - ./nginx/templates:/etc/nginx/templates:ro
-      - ./nginx/ssl:/etc/nginx/ssl:ro
-    depends_on:
-      ui:
-        condition: service_healthy
-    networks:
-      - rediver-network
-    security_opt:
-      - no-new-privileges:true
-    deploy:
-      resources:
-        limits:
-          cpus: '1'
-          memory: 256M
-        reservations:
-          cpus: '0.1'
-          memory: 64M
-    healthcheck:
-      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://127.0.0.1:80/health"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 10s
-    logging:
-      driver: "json-file"
-      options:
-        max-size: "50m"
-        max-file: "3"
-
   # ---------------------------------------------------------------------------
   # PostgreSQL Database
   # ---------------------------------------------------------------------------
@@ -115,7 +55,6 @@ services:
       - postgres_data:/var/lib/postgresql/data
     expose:
       - "5432"
-    # No external port exposure in production
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-rediver} -d ${DB_NAME:-rediver}"]
       interval: 10s
@@ -154,7 +93,6 @@ services:
       - redis_data:/data
     expose:
       - "6379"
-    # No external port exposure in production
     healthcheck:
       test: ["CMD", "redis-cli", "--no-auth-warning", "-a", "${REDIS_PASSWORD}", "ping"]
       interval: 10s
@@ -210,7 +148,6 @@ services:
   # ---------------------------------------------------------------------------
   # Backend API (Go)
   # ---------------------------------------------------------------------------
-  # Image from Docker Hub: rediverio/rediver-api:<version>
   api:
     image: rediverio/rediver-api:${VERSION:-v0.1.0}
     container_name: rediver-api
@@ -219,10 +156,8 @@ services:
       - .env.db.prod
       - .env.api.prod
     environment:
-      # Database connection
       DB_HOST: postgres
       DB_PORT: 5432
-      # Redis connection
       REDIS_HOST: redis
       REDIS_PORT: 6379
     expose:
@@ -265,18 +200,15 @@ services:
   # ---------------------------------------------------------------------------
   # Frontend UI (Next.js)
   # ---------------------------------------------------------------------------
-  # Image from Docker Hub: rediverio/rediver-ui:<version>
-  # Note: NEXT_PUBLIC_* variables are baked into the image at build time
-  # Note: UI is internal only, accessed via nginx reverse proxy
+  # Port 3000 exposed for external reverse proxy
   ui:
     image: rediverio/rediver-ui:${VERSION:-v0.1.0}
     container_name: rediver-ui
     restart: always
     env_file:
       - .env.ui.prod
-    expose:
-      - "3000"
-    # No external ports - nginx handles external traffic
+    ports:
+      - "${UI_PORT:-3000}:3000"
     depends_on:
       api:
         condition: service_healthy

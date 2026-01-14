@@ -7,9 +7,9 @@
 #
 # Quick Start:
 #   1. Copy env files:
-#      cp .env.db.staging.example .env.db.staging
-#      cp .env.api.staging.example .env.api.staging
-#      cp .env.ui.staging.example .env.ui.staging
+#      cp environments/.env.db.staging.example .env.db.staging
+#      cp environments/.env.api.staging.example .env.api.staging
+#      cp environments/.env.ui.staging.example .env.ui.staging
 #
 #   2. Update secrets in env files
 #
@@ -22,6 +22,9 @@
 # With test data:
 #   docker compose -f docker-compose.staging.yml --profile seed up -d
 #
+# With Nginx/SSL (use --profile ssl):
+#   docker compose -f docker-compose.staging.yml --profile ssl up -d
+#
 # Debug mode (expose DB/Redis ports):
 #   docker compose -f docker-compose.staging.yml --profile debug up -d
 #
@@ -33,20 +36,72 @@
 #   Pull new:   docker compose -f docker-compose.staging.yml pull
 #
 # Services:
+#   - nginx:     Nginx reverse proxy (--profile ssl, ports 80, 443)
 #   - postgres:  PostgreSQL 17 database (internal only)
 #   - redis:     Redis 7 cache (internal only)
 #   - migrate:   Runs migrations (exits after completion)
 #   - seed:      Seeds test data (--profile seed)
 #   - api:       Backend API (internal only)
-#   - ui:        Frontend UI (port 3000)
+#   - ui:        Frontend UI (port 3000, or via nginx with --profile ssl)
 #
 # Security Notes:
 #   - Database and Redis are NOT exposed by default
 #   - Use --profile debug to expose ports for debugging
+#   - Use --profile ssl to enable nginx with SSL
 #   - For production-like security, don't use debug profile
 # =============================================================================
 
 services:
+  # ---------------------------------------------------------------------------
+  # Nginx Reverse Proxy (Optional - use with --profile ssl)
+  # ---------------------------------------------------------------------------
+  # Environment Variables:
+  #   - NGINX_HOST: Server hostname (default: localhost)
+  #
+  # Usage:
+  #   NGINX_HOST=staging.example.com docker compose --profile ssl up -d
+  nginx:
+    image: nginx:1.27-alpine
+    container_name: rediver-nginx
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    env_file:
+      - .env.nginx.staging
+    environment:
+      - NGINX_HOST=${NGINX_HOST:-localhost}
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./nginx/templates:/etc/nginx/templates:ro
+      - ./nginx/ssl:/etc/nginx/ssl:ro
+    depends_on:
+      ui:
+        condition: service_healthy
+    networks:
+      - rediver-network
+    profiles:
+      - ssl
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 128M
+        reservations:
+          cpus: '0.1'
+          memory: 32M
+    healthcheck:
+      test: [ "CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://127.0.0.1:80/health" ]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "50m"
+        max-file: "3"
+
   # ---------------------------------------------------------------------------
   # PostgreSQL Database
   # ---------------------------------------------------------------------------
@@ -66,7 +121,7 @@ services:
       - "5432"
     # No external ports by default - use --profile debug to expose
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-rediver} -d ${DB_NAME:-rediver}"]
+      test: [ "CMD-SHELL", "pg_isready -U ${DB_USER:-rediver} -d ${DB_NAME:-rediver}" ]
       interval: 5s
       timeout: 5s
       retries: 10
@@ -108,14 +163,14 @@ services:
     restart: unless-stopped
     env_file:
       - .env.db.staging
-    command: redis-server --appendonly yes ${REDIS_PASSWORD:+--requirepass $REDIS_PASSWORD}
+    command: redis-server --appendonly yes ${REDIS_PASSWORD:+--requirepass ${REDIS_PASSWORD}}
     volumes:
       - redis_data:/data
     expose:
       - "6379"
     # No external ports by default - use --profile debug to expose
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      test: [ "CMD", "redis-cli", "ping" ]
       interval: 5s
       timeout: 5s
       retries: 10
@@ -160,7 +215,7 @@ services:
       - .env.db.staging
     environment:
       DATABASE_URL: postgres://${DB_USER:-rediver}:${DB_PASSWORD:-secret}@postgres:5432/${DB_NAME:-rediver}?sslmode=disable
-    entrypoint: ["/bin/sh", "-c"]
+    entrypoint: [ "/bin/sh", "-c" ]
     command:
       - |
         echo "Waiting for database..."
@@ -191,7 +246,7 @@ services:
       PGUSER: ${DB_USER:-rediver}
       PGPASSWORD: ${DB_PASSWORD:-secret}
       PGDATABASE: ${DB_NAME:-rediver}
-    entrypoint: ["/bin/sh", "-c"]
+    entrypoint: [ "/bin/sh", "-c" ]
     command:
       - |
         echo "Waiting for migrations..."
@@ -218,7 +273,7 @@ services:
   # ---------------------------------------------------------------------------
   # Image from Docker Hub: rediverio/rediver-api:<version>-staging
   api:
-    image: rediverio/rediver-api:${VERSION:-v0.1.0}-staging
+    image: rediverio/rediver-api:${VERSION:-v0.1.1}-staging
     container_name: rediver-api
     restart: unless-stopped
     env_file:
@@ -239,7 +294,7 @@ services:
       redis:
         condition: service_healthy
     healthcheck:
-      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8080/health"]
+      test: [ "CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8080/health" ]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -277,7 +332,7 @@ services:
       api:
         condition: service_healthy
     healthcheck:
-      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3000/api/health"]
+      test: [ "CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://127.0.0.1:3000/api/health" ]
       interval: 30s
       timeout: 10s
       retries: 3
