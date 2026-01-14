@@ -290,7 +290,7 @@ prod-pull: check-prod ## Pull latest production images
 	@echo "Pulling production images (version: $(VERSION))..."
 	docker compose -f $(PROD_COMPOSE) --env-file .env.db.prod pull
 
-prod-upgrade: check-prod check-ssl ## Upgrade to latest version
+prod-upgrade: check-prod check-nginx-prod check-ssl ## Upgrade to latest version
 	@echo "Upgrading production to version: $(VERSION)..."
 	docker compose -f $(PROD_COMPOSE) --env-file .env.db.prod pull
 	docker compose -f $(PROD_COMPOSE) --env-file .env.db.prod up -d --force-recreate
