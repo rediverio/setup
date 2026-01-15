@@ -2,6 +2,18 @@
 
 Rediver is a multi-tenant security platform with a Go backend API and Next.js frontend.
 
+## 📚 Documentation
+
+| Guide | Description |
+|-------|-------------|
+| [Getting Started](https://docs.rediver.io/docs/getting-started) | Quick start guide |
+| [Architecture](https://docs.rediver.io/docs/architecture/overview) | System design |
+| [Authentication](https://docs.rediver.io/docs/guides/authentication) | JWT & OIDC auth flow |
+| [Multi-tenancy](https://docs.rediver.io/docs/guides/multi-tenancy) | Teams & tenant switching |
+| [Permissions](https://docs.rediver.io/docs/guides/permissions) | Role-based access control |
+| [Configuration](https://docs.rediver.io/docs/operations/configuration) | Environment variables |
+| [Troubleshooting](https://docs.rediver.io/docs/operations/troubleshooting) | Common issues |
+
 ## Architecture
 
 ```
@@ -119,7 +131,33 @@ make staging-up-seed
 - Email: `admin@rediver.io`
 - Password: `Password123`
 
-### 5. HTTPS/SSL Mode (Optional)
+### 5. Database Migration & Seeding
+
+Migrations run automatically on startup. For manual seeding:
+
+```bash
+# Seed required data (permissions, roles)
+make db-migrate-staging
+
+# Seed test data (users, teams)
+make staging-seed
+
+# Seed VNSecurity sample assets (optional)
+make staging-seed-vnsecurity
+
+# List available seed files
+make staging-seed-list
+```
+
+**Seed options:**
+| Command | Description |
+|---------|-------------|
+| `make staging-up-seed` | Start + auto-seed test data |
+| `make staging-seed` | Seed test data to running DB |
+| `make staging-seed-vnsecurity` | Add VNSecurity sample assets |
+| `make staging-seed-custom FILE=name.sql` | Custom seed file |
+
+### 6. HTTPS/SSL Mode (Optional)
 
 To run staging with HTTPS (useful for testing OAuth, secure cookies):
 
@@ -135,7 +173,7 @@ open https://localhost
 # Note: Browser will show certificate warning (expected for self-signed)
 ```
 
-### 6. Debug Mode (Optional)
+### 7. Debug Mode (Optional)
 
 To expose database and Redis ports for debugging:
 
