@@ -33,8 +33,8 @@ PROD_SIMPLE_COMPOSE := docker-compose.prod-simple.yml
 # Env files for docker-compose variable substitution (image versions, db passwords, etc.)
 # Note: These are for compose file variables like ${API_VERSION}, ${DB_PASSWORD}, etc.
 # Container env vars are loaded via env_file: directives in the compose file itself
-STAGING_ENV_FILES := --env-file .env.db.staging --env-file .env.versions.staging
-PROD_ENV_FILES := --env-file .env.db.prod --env-file .env.versions.prod
+STAGING_ENV_FILES := --env-file .env.db.staging --env-file .env.api.staging --env-file .env.ui.staging --env-file .env.nginx.staging --env-file .env.versions.staging
+PROD_ENV_FILES := --env-file .env.db.prod --env-file .env.api.prod --env-file .env.ui.prod --env-file .env.nginx.prod --env-file .env.versions.prod
 
 .PHONY: help init-staging init-prod init-ssl init-ssl-letsencrypt ssl-renew \
         staging-up staging-up-seed staging-up-ssl staging-up-ssl-seed staging-down staging-logs staging-ps staging-restart \
