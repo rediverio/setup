@@ -1,0 +1,22 @@
+# ==============================================================================
+# Nginx Upstream Definitions
+# ==============================================================================
+# Shared upstream definitions for all server blocks.
+# This file is named with "00-" prefix to ensure it loads first.
+#
+# Upstreams:
+#   - ui_backend: Next.js UI application (port 3000)
+#   - api_backend: Go API server (port 8080)
+# ==============================================================================
+
+# UI Backend (Next.js)
+upstream ui_backend {
+    server ui:3000;
+    keepalive 32;
+}
+
+# API Backend (Go)
+upstream api_backend {
+    server api:8080;
+    keepalive 32;
+}

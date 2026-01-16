@@ -51,11 +51,17 @@ services:
   # ---------------------------------------------------------------------------
   # Nginx Reverse Proxy (SSL Termination)
   # ---------------------------------------------------------------------------
+  # Multi-domain nginx configuration serving:
+  #   - UI: ${NGINX_HOST} (e.g., rediver.io)
+  #   - API: ${API_HOST} (e.g., api.rediver.io)
+  #
   # Environment Variables:
-  #   - NGINX_HOST: Server hostname (REQUIRED for production)
+  #   - NGINX_HOST: UI hostname (REQUIRED for production)
+  #   - API_HOST: API hostname (REQUIRED for production)
   #
   # Usage:
-  #   NGINX_HOST=example.com docker compose -f docker-compose.prod.yml up -d
+  #   NGINX_HOST=rediver.io API_HOST=api.rediver.io \
+  #     docker compose -f docker-compose.prod.yml up -d
   nginx:
     image: nginx:1.27-alpine
     container_name: rediver-nginx
@@ -67,11 +73,14 @@ services:
       - .env.nginx.prod
     environment:
       - NGINX_HOST=${NGINX_HOST:?NGINX_HOST is required - set in .env.nginx.prod}
+      - API_HOST=${API_HOST:?API_HOST is required - set in .env.nginx.prod}
     volumes:
       - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
       - ./nginx/templates:/etc/nginx/templates:ro
       - ./nginx/ssl:/etc/nginx/ssl:ro
     depends_on:
+      api:
+        condition: service_healthy
       ui:
         condition: service_healthy
     networks:

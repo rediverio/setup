@@ -1,74 +1,141 @@
 # Nginx Configuration
 
-Nginx reverse proxy configuration for Rediver Platform with SSL/TLS support.
+Nginx reverse proxy configuration for Rediver Platform with multi-domain and SSL/TLS support.
 
-## Configuration
+## Architecture
 
-### Server Hostname (NGINX_HOST)
-
-The server hostname is configured via the `NGINX_HOST` environment variable:
-
-| Environment | Default | Required | Location |
-|-------------|---------|----------|----------|
-| Staging | `localhost` | No | `.env.nginx.staging` |
-| Production | - | **Yes** | `.env.nginx.prod` |
-
-**Examples:**
-```bash
-# Staging - localhost (default)
-NGINX_HOST=localhost
-
-# Staging - custom domain
-NGINX_HOST=staging.example.com
-
-# Production - your domain (required)
-NGINX_HOST=example.com
+```
+                    ┌─────────────────────────────────────────────────┐
+                    │                     Nginx                        │
+                    │                                                  │
+    Internet ──────►│  ┌─────────────────┐   ┌─────────────────┐      │
+                    │  │ rediver.io      │   │ api.rediver.io  │      │
+                    │  │ (NGINX_HOST)    │   │ (API_HOST)      │      │
+                    │  └────────┬────────┘   └────────┬────────┘      │
+                    │           │                     │               │
+                    └───────────┼─────────────────────┼───────────────┘
+                                │                     │
+                                ▼                     ▼
+                         ┌──────────┐          ┌──────────┐
+                         │    UI    │          │   API    │
+                         │  :3000   │          │  :8080   │
+                         └──────────┘          └──────────┘
 ```
 
-### How it works
+## Quick Start
 
-1. Server configuration is defined in `templates/default.conf.template`
-2. Nginx docker image processes templates with `envsubst` on startup
-3. `${NGINX_HOST}` is replaced with actual value from environment
-
-## SSL Certificates
-
-### Option 1: Self-Signed (Staging/Testing)
+### Staging
 
 ```bash
-# Generate self-signed certificate
+# 1. Copy env file
+cp environments/.env.nginx.staging.example .env.nginx.staging
+
+# 2. Generate self-signed certificates
 make init-ssl
 
-# Start staging with SSL
+# 3. Start with SSL
 make staging-up-ssl
 ```
 
-**Note:** Self-signed certificates will show browser warnings. This is expected.
-
-### Option 2: Let's Encrypt (Production)
+### Production
 
 ```bash
-# Show setup instructions
-make init-ssl-letsencrypt
+# 1. Copy env file
+cp environments/.env.nginx.prod.example .env.nginx.prod
+
+# 2. Update domains in .env.nginx.prod
+NGINX_HOST=rediver.io
+API_HOST=api.rediver.io
+
+# 3. Setup SSL certificates (see SSL section below)
+
+# 4. Start production
+make prod-up
 ```
 
-Or manually:
+## Configuration
+
+### Environment Variables
+
+| Variable | Staging Default | Production | Description |
+|----------|-----------------|------------|-------------|
+| `NGINX_HOST` | `localhost` | Required | UI domain (e.g., `rediver.io`) |
+| `API_HOST` | `api.localhost` | Required | API domain (e.g., `api.rediver.io`) |
+
+### Example Configurations
+
+**Local Development:**
+```bash
+NGINX_HOST=localhost
+API_HOST=api.localhost
+```
+
+**Staging:**
+```bash
+NGINX_HOST=staging.rediver.io
+API_HOST=api.staging.rediver.io
+```
+
+**Production:**
+```bash
+NGINX_HOST=rediver.io
+API_HOST=api.rediver.io
+```
+
+## Multi-Domain Setup
+
+Nginx serves two domains with separate configurations:
+
+### UI Domain (NGINX_HOST)
+- Serves the Next.js frontend
+- Static asset caching
+- WebSocket support for HMR
+
+### API Domain (API_HOST)
+- Serves the Go API backend
+- CORS headers for cross-origin requests
+- Different rate limits per endpoint:
+  - `/api/v1/auth/*`: 5 req/s (authentication)
+  - `/api/v1/agent/*`: 100 req/s (agent data ingest)
+  - `/api/*`: 30 req/s (general API)
+- WebSocket support for real-time updates
+- Large payload support for agent data (50MB max)
+
+## SSL Certificates
+
+### Option 1: Self-Signed (Staging/Development)
+
+```bash
+# Generate self-signed certificate for both domains
+make init-ssl
+
+# Or manually:
+openssl req -x509 -nodes -days 365 -newkey rsa:2048 \
+  -keyout nginx/ssl/key.pem \
+  -out nginx/ssl/cert.pem \
+  -subj "/CN=localhost" \
+  -addext "subjectAltName=DNS:localhost,DNS:api.localhost,DNS:*.rediver.io"
+```
+
+### Option 2: Let's Encrypt (Production)
 
 ```bash
 # 1. Install Certbot
 sudo apt install certbot
 
-# 2. Obtain certificate (stop any service on port 80 first)
-sudo certbot certonly --standalone -d your-domain.com
+# 2. Stop any service on port 80
+docker compose down
 
-# 3. Copy certificates
-sudo cp /etc/letsencrypt/live/your-domain.com/fullchain.pem nginx/ssl/cert.pem
-sudo cp /etc/letsencrypt/live/your-domain.com/privkey.pem nginx/ssl/key.pem
+# 3. Obtain certificates for both domains
+sudo certbot certonly --standalone \
+  -d rediver.io \
+  -d api.rediver.io
+
+# 4. Copy certificates
+sudo cp /etc/letsencrypt/live/rediver.io/fullchain.pem nginx/ssl/cert.pem
+sudo cp /etc/letsencrypt/live/rediver.io/privkey.pem nginx/ssl/key.pem
 sudo chmod 644 nginx/ssl/cert.pem
 sudo chmod 600 nginx/ssl/key.pem
-
-# 4. Update NGINX_HOST in .env.ui.prod
-NGINX_HOST=your-domain.com
 
 # 5. Start production
 make prod-up
@@ -76,7 +143,7 @@ make prod-up
 
 ### Option 3: Commercial Certificate
 
-1. Purchase SSL certificate from provider (DigiCert, Comodo, etc.)
+1. Purchase wildcard SSL certificate (recommended for `*.rediver.io`)
 2. Place certificate files in `nginx/ssl/`:
    - `cert.pem` - Certificate chain
    - `key.pem` - Private key
@@ -85,15 +152,36 @@ make prod-up
 
 ```
 nginx/
-├── nginx.conf                    # Main nginx configuration
+├── nginx.conf                          # Main nginx configuration
 ├── templates/
-│   └── default.conf.template     # Server block template (uses ${NGINX_HOST})
-├── ssl/                          # SSL certificates directory
-│   ├── .gitignore                # Ignore certificate files
-│   ├── cert.pem                  # SSL certificate (you provide)
-│   └── key.pem                   # SSL private key (you provide)
-└── README.md                     # This file
+│   ├── 00-upstreams.conf.template      # Shared upstream definitions
+│   ├── api.conf.template               # API server block (api.rediver.io)
+│   └── ui.conf.template                # UI server block (rediver.io)
+├── ssl/                                # SSL certificates directory
+│   ├── .gitignore                      # Ignore certificate files
+│   ├── cert.pem                        # SSL certificate (you provide)
+│   └── key.pem                         # SSL private key (you provide)
+└── README.md                           # This file
 ```
+
+## Rate Limiting
+
+Different rate limits are configured for different endpoints:
+
+| Zone | Rate | Burst | Endpoints |
+|------|------|-------|-----------|
+| `ui_general` | 10 req/s | 20 | UI routes |
+| `api_general` | 30 req/s | 50 | General API (`/api/*`) |
+| `api_auth` | 5 req/s | 10 | Authentication (`/api/v1/auth/*`) |
+| `api_ingest` | 100 req/s | 200 | Agent data ingest (`/api/v1/agent/*`) |
+
+## CORS Configuration
+
+The API server is configured with CORS headers to allow requests from:
+- `localhost` (development)
+- `127.0.0.1` (development)
+- `${NGINX_HOST}` (UI domain)
+- `*.rediver.io` (all Rediver subdomains)
 
 ## Management Commands
 
@@ -120,13 +208,17 @@ make nginx-logs-prod       # Production
 make ssl-renew
 ```
 
-## Security Notes
+## Security Features
 
-- Never commit SSL private keys to Git (`.gitignore` configured)
-- Rotate certificates before expiry (Let's Encrypt: 90 days)
-- TLS 1.2 and 1.3 only (older versions disabled)
-- HSTS enabled with 1 year max-age
-- Rate limiting: 10 requests/second per IP
+- **TLS 1.2/1.3 only** - Older versions disabled
+- **HSTS** - 1 year max-age with includeSubDomains and preload
+- **Security Headers**:
+  - `X-Frame-Options: DENY`
+  - `X-Content-Type-Options: nosniff`
+  - `X-XSS-Protection: 1; mode=block`
+  - `Referrer-Policy: strict-origin-when-cross-origin`
+- **Rate Limiting** - Per-IP limits on all endpoints
+- **SSL Session Tickets** - Disabled for forward secrecy
 
 ## Certificate Renewal (Let's Encrypt)
 
@@ -135,8 +227,8 @@ make ssl-renew
 sudo certbot renew
 
 # Copy renewed certificates
-sudo cp /etc/letsencrypt/live/your-domain.com/fullchain.pem nginx/ssl/cert.pem
-sudo cp /etc/letsencrypt/live/your-domain.com/privkey.pem nginx/ssl/key.pem
+sudo cp /etc/letsencrypt/live/rediver.io/fullchain.pem nginx/ssl/cert.pem
+sudo cp /etc/letsencrypt/live/rediver.io/privkey.pem nginx/ssl/key.pem
 
 # Reload nginx
 make ssl-renew
@@ -147,6 +239,7 @@ make ssl-renew
 ### Certificate not trusted
 - Ensure `cert.pem` contains the full certificate chain
 - Check certificate validity: `openssl x509 -in nginx/ssl/cert.pem -text -noout`
+- Verify SANs include both domains: `openssl x509 -in nginx/ssl/cert.pem -noout -ext subjectAltName`
 
 ### Permission denied
 ```bash
@@ -167,7 +260,16 @@ make nginx-test-staging
 make nginx-test-prod
 ```
 
-### NGINX_HOST not working
-- Ensure `.env.nginx.staging` or `.env.nginx.prod` exists
-- Check that `NGINX_HOST` is set correctly in the env file
-- Restart nginx after changing: `make staging-down && make staging-up-ssl`
+### CORS errors
+- Verify `API_HOST` is correctly set
+- Check that the Origin header matches allowed patterns
+- Look at nginx logs for blocked requests
+
+### Rate limit exceeded (429)
+- Check if legitimate traffic is being blocked
+- Adjust rate limits in `api.conf.template` or `ui.conf.template`
+
+### API not responding
+- Verify API container is healthy: `docker compose ps`
+- Check API logs: `docker compose logs api`
+- Ensure nginx depends on API service in docker-compose

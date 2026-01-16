@@ -27,11 +27,15 @@
 #   Logs:       docker compose -f docker-compose.prod-simple.yml logs -f
 #   Stop:       docker compose -f docker-compose.prod-simple.yml down
 #
+# Exposed Ports (for external reverse proxy):
+#   - UI:  ${UI_PORT:-3000}  -> Route: rediver.io
+#   - API: ${API_PORT:-8080} -> Route: api.rediver.io
+#
 # Services:
 #   - postgres:  PostgreSQL 17 database (internal only)
 #   - redis:     Redis 7 cache (internal only)
 #   - migrate:   Runs migrations (exits after completion)
-#   - api:       Backend API (internal only)
+#   - api:       Backend API (port 8080)
 #   - ui:        Frontend UI (port 3000)
 #
 # For full production with built-in Nginx/SSL, use: docker-compose.prod.yml
@@ -146,6 +150,7 @@ services:
   # ---------------------------------------------------------------------------
   # Backend API (Go)
   # ---------------------------------------------------------------------------
+  # API exposed on port 8080 for external reverse proxy (api.rediver.io)
   api:
     image: rediverio/rediver-api:${API_VERSION:-latest}
     container_name: rediver-api
@@ -158,8 +163,9 @@ services:
       DB_PORT: 5432
       REDIS_HOST: redis
       REDIS_PORT: 6379
+    ports:
+      - "${API_PORT:-8080}:8080"
     expose:
-      - "8080"
       - "9090"
     depends_on:
       migrate:

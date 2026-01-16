@@ -1,36 +1,23 @@
 # ==============================================================================
-# Nginx Configuration for Rediver Platform
+# Nginx Configuration for Rediver UI (rediver.io / app.rediver.io)
 # ==============================================================================
-# Production-ready Nginx configuration with:
+# UI-specific nginx configuration with:
 # - SSL/TLS support
 # - HTTP to HTTPS redirect
-# - Gzip compression
 # - Security headers
 # - Caching for static assets
 # - Rate limiting
 #
 # Environment Variables:
-#   - NGINX_HOST: Server hostname (default: localhost)
+#   - NGINX_HOST: UI hostname (default: localhost)
 #
 # Usage:
-#   This template is automatically processed by nginx docker image.
-#   Set NGINX_HOST environment variable in docker-compose.
+#   Set NGINX_HOST environment variable in docker-compose or .env file.
 # ==============================================================================
 
-# Rate limiting zone (10 requests per second per IP)
-limit_req_zone $binary_remote_addr zone=general:10m rate=10r/s;
+# Rate limiting zone for UI (10 requests per second per IP)
+limit_req_zone $binary_remote_addr zone=ui_general:10m rate=10r/s;
 limit_req_status 429;
-
-# Upstream backends
-upstream ui_backend {
-    server ui:3000;
-    keepalive 32;
-}
-
-upstream api_backend {
-    server api:8080;
-    keepalive 32;
-}
 
 # ===========================================================================
 # HTTP Server (Redirect to HTTPS or serve if behind proxy)
@@ -132,7 +119,7 @@ server {
     # UI Application (Default)
     # -----------------------------------------------------------------------
     location / {
-        limit_req zone=general burst=20 nodelay;
+        limit_req zone=ui_general burst=20 nodelay;
 
         proxy_pass http://ui_backend;
         proxy_http_version 1.1;

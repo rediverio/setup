@@ -55,11 +55,17 @@ services:
   # ---------------------------------------------------------------------------
   # Nginx Reverse Proxy (Optional - use with --profile ssl)
   # ---------------------------------------------------------------------------
+  # Multi-domain nginx configuration serving:
+  #   - UI: ${NGINX_HOST} (e.g., localhost, rediver.io)
+  #   - API: ${API_HOST} (e.g., api.localhost, api.rediver.io)
+  #
   # Environment Variables:
-  #   - NGINX_HOST: Server hostname (default: localhost)
+  #   - NGINX_HOST: UI hostname (default: localhost)
+  #   - API_HOST: API hostname (default: api.localhost)
   #
   # Usage:
-  #   NGINX_HOST=staging.example.com docker compose --profile ssl up -d
+  #   NGINX_HOST=staging.example.com API_HOST=api.staging.example.com \
+  #     docker compose --profile ssl up -d
   nginx:
     image: nginx:1.27-alpine
     container_name: rediver-nginx
@@ -71,11 +77,14 @@ services:
       - .env.nginx.staging
     environment:
       - NGINX_HOST=${NGINX_HOST:-localhost}
+      - API_HOST=${API_HOST:-api.localhost}
     volumes:
       - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
       - ./nginx/templates:/etc/nginx/templates:ro
       - ./nginx/ssl:/etc/nginx/ssl:ro
     depends_on:
+      api:
+        condition: service_healthy
       ui:
         condition: service_healthy
     networks:
