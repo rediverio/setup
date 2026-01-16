@@ -215,17 +215,7 @@ staging-up-ssl-seed: check-staging check-nginx-staging check-ssl ## Start stagin
 	@echo "Test credentials: admin@rediver.io / Password123"
 	@echo "UI: https://localhost"
 
-staging-seed: check-staging ## Seed test data to running staging database
-	@echo "Seeding test data..."
-	@if docker ps --format '{{.Names}}' | grep -q rediver-postgres; then \
-		docker compose -f $(STAGING_COMPOSE) $(STAGING_ENV_FILES) run --rm seed; \
-		echo ""; \
-		echo "✓ Seeding complete!"; \
-		echo "Test credentials: admin@rediver.io / Password123"; \
-	else \
-		echo "Error: PostgreSQL is not running. Start services first with 'make staging-up'"; \
-		exit 1; \
-	fi
+ssl: init-ssl ## Alias for init-ssl generate-certs
 
 staging-down: ## Stop staging services (use staging-down-ssl if using SSL)
 	docker compose -f $(STAGING_COMPOSE) $(STAGING_ENV_FILES) down
