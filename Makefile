@@ -109,6 +109,11 @@ staging-restart: ## Restart staging services. Use s=<service> to limit.
 staging-status: ## Show staging containers status
 	docker compose -f $(STAGING_COMPOSE) $(STAGING_ENV_FILES) ps
 
+staging-seed: ## Seed test data into running staging database
+	@echo "Seeding test data..."
+	docker compose -f $(STAGING_COMPOSE) $(STAGING_ENV_FILES) --profile seed up seed
+	@echo "✅ Seeding complete!"
+
 # =============================================================================
 # Production Environment
 # =============================================================================
