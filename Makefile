@@ -114,6 +114,11 @@ staging-seed: ## Seed test data into running staging database
 	docker compose -f $(STAGING_COMPOSE) $(STAGING_ENV_FILES) --profile seed up seed
 	@echo "✅ Seeding complete!"
 
+staging-seed-vnsecurity: ## Seed VNSecurity assets into running staging database
+	@echo "Seeding VNSecurity assets..."
+	docker compose -f $(STAGING_COMPOSE) $(STAGING_ENV_FILES) --profile seed-vnsecurity up seed-vnsecurity
+	@echo "✅ VNSecurity Seeding complete!"
+
 # =============================================================================
 # Production Environment
 # =============================================================================
