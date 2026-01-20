@@ -142,23 +142,15 @@ Migrations run automatically on startup. For manual seeding:
 # Seed required data (permissions, roles)
 make db-migrate-staging
 
-# Seed test data (users, teams)
+# Seed test data (users, teams, assets)
 make staging-seed
-
-# Seed VNSecurity sample assets (optional)
-make staging-seed-vnsecurity
-
-# List available seed files
-make staging-seed-list
 ```
 
 **Seed options:**
 | Command | Description |
 |---------|-------------|
-| `make staging-up-seed` | Start + auto-seed test data |
+| `make staging-up seed=true` | Start + auto-seed test data |
 | `make staging-seed` | Seed test data to running DB |
-| `make staging-seed-vnsecurity` | Add VNSecurity sample assets |
-| `make staging-seed-custom FILE=name.sql` | Custom seed file |
 
 ### 6. HTTPS/SSL Mode (Optional)
 

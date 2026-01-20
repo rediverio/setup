@@ -238,12 +238,10 @@ services:
   #
   # Available seed files:
   #   - seed_required.sql      - Required data (always runs)
-  #   - seed_comprehensive.sql          - Test/demo data (runs if SEED_TEST_DATA=true)
-  #   - seed_vnsecurity_assets.sql - VNSecurity specific assets
+  #   - seed_comprehensive.sql - Test/demo data (runs if SEED_TEST_DATA=true)
   #
-  # Profiles:
+  # Usage:
   #   --profile seed           - Run seed_required + seed_comprehensive
-  #   --profile seed-vnsecurity - Run seed_vnsecurity_assets
   seed:
     image: rediverio/seed:${SEED_VERSION:-staging-latest}
     environment:
@@ -274,31 +272,6 @@ services:
       - app-network
     profiles:
       - seed
-
-  # ---------------------------------------------------------------------------
-  # VNSecurity Assets Seeding (Optional - use with --profile seed-vnsecurity)
-  # ---------------------------------------------------------------------------
-  seed-vnsecurity:
-    image: rediverio/seed:${SEED_VERSION:-staging-latest}
-    environment:
-      PGHOST: postgres
-      PGPORT: 5432
-      PGUSER: ${DB_USER:-rediver}
-      PGPASSWORD: ${DB_PASSWORD:-secret}
-      PGDATABASE: ${DB_NAME:-rediver}
-    entrypoint: [ "/bin/sh", "-c" ]
-    command:
-      - |
-        echo "Seeding VNSecurity assets..."
-        psql -f /seed/seed_vnsecurity_assets.sql
-        echo "VNSecurity seeding complete!"
-    depends_on:
-      postgres:
-        condition: service_healthy
-    networks:
-      - app-network
-    profiles:
-      - seed-vnsecurity
 
   # ---------------------------------------------------------------------------
   # Backend API (Go)

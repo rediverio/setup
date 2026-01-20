@@ -88,8 +88,7 @@ docker pull rediverio/seed:staging-latest
 
 **Available seed files:**
 - `seed_required.sql` - Required data (roles, permissions, default settings)
-- `seed_comprehensive.sql` - Test/demo data (test users, sample assets)
-- `seed_vnsecurity_assets.sql` - VNSecurity specific assets
+- `seed_comprehensive.sql` - Comprehensive test data (users, teams, assets, findings)
 
 **Usage:**
 ```bash
@@ -125,17 +124,8 @@ SEED_VERSION=staging-latest
 ### Seeding Commands
 
 ```bash
-# Seed with required + test data
+# Seed with required + comprehensive test data
 make staging-seed
-
-# Seed with VNSecurity assets
-make staging-seed-vnsecurity
-
-# Seed with custom file
-make staging-seed-custom FILE=seed_vnsecurity_assets.sql
-
-# List available seed files
-make staging-seed-list
 ```
 
 ### Migration Commands
@@ -164,9 +154,6 @@ docker compose -f docker-compose.staging.yml --profile ssl up -d
 
 # With SSL + test data
 docker compose -f docker-compose.staging.yml --profile ssl --profile seed up -d
-
-# Seed VNSecurity assets (after services are running)
-docker compose -f docker-compose.staging.yml --profile seed-vnsecurity up seed-vnsecurity
 ```
 
 ### Available Profiles
@@ -174,7 +161,6 @@ docker compose -f docker-compose.staging.yml --profile seed-vnsecurity up seed-v
 | Profile | Description |
 |---------|-------------|
 | `seed` | Run seed_required.sql + seed_comprehensive.sql |
-| `seed-vnsecurity` | Run seed_vnsecurity_assets.sql |
 | `ssl` | Enable nginx reverse proxy with SSL |
 | `debug` | Expose database and Redis ports |
 
