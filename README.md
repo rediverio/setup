@@ -83,10 +83,8 @@ See [docs/DOCKER_IMAGES.md](./docs/DOCKER_IMAGES.md) for detailed documentation.
 ```bash
 cd setup
 
-# Copy environment templates from environments folder
-cp environments/.env.db.staging.example .env.db.staging
-cp environments/.env.api.staging.example .env.api.staging
-cp environments/.env.ui.staging.example .env.ui.staging
+# Initialize all env files from templates
+make init-staging
 
 # Generate secrets
 make generate-secrets
@@ -106,6 +104,9 @@ Edit `.env.api.staging` and update:
 ```env
 # Authentication (REQUIRED - min 64 chars)
 AUTH_JWT_SECRET=<generated_jwt_secret>
+
+# Encryption key for credentials (REQUIRED)
+APP_ENCRYPTION_KEY=<generated_with_openssl_rand_hex_32>
 ```
 
 Edit `.env.ui.staging` and update:
@@ -118,19 +119,19 @@ CSRF_SECRET=<generated_csrf_secret>
 ### 3. Start Everything
 
 ```bash
-# Start all services
+# Start all services (SSL enabled by default)
 make staging-up
 
 # Or with test data
-make staging-up-seed
+make staging-up seed=true
 ```
 
 ### 4. Access Application
 
-- **Frontend**: http://localhost:3000
-- **API Health**: http://localhost:3000/api/health
+- **Frontend**: https://localhost
+- **API**: https://api.localhost
 
-**Test credentials** (when using `staging-up-seed`):
+**Test credentials** (when using `seed=true`):
 - Email: `admin@rediver.io`
 - Password: `Password123`
 
@@ -139,10 +140,7 @@ make staging-up-seed
 Migrations run automatically on startup. For manual seeding:
 
 ```bash
-# Seed required data (permissions, roles)
-make db-migrate-staging
-
-# Seed test data (users, teams, assets)
+# Seed test data to running database
 make staging-seed
 ```
 
@@ -152,29 +150,13 @@ make staging-seed
 | `make staging-up seed=true` | Start + auto-seed test data |
 | `make staging-seed` | Seed test data to running DB |
 
-### 6. HTTPS/SSL Mode (Optional)
-
-To run staging with HTTPS (useful for testing OAuth, secure cookies):
-
-```bash
-# Generate self-signed certificate
-make init-ssl
-
-# Start with nginx/SSL
-make staging-up-ssl
-
-# Access via HTTPS
-open https://localhost
-# Note: Browser will show certificate warning (expected for self-signed)
-```
-
-### 7. Debug Mode (Optional)
+### 6. Debug Mode (Optional)
 
 To expose database and Redis ports for debugging:
 
 ```bash
 # Start with debug profile
-docker compose -f docker-compose.staging.yml --env-file .env.db.staging --profile debug up -d
+docker compose -f docker-compose.staging.yml --profile debug --profile ssl up -d
 
 # Access database
 psql -h localhost -p 5432 -U rediver -d rediver
@@ -201,10 +183,8 @@ redis-cli -h localhost -p 6379
 ```bash
 cd setup
 
-# Copy environment templates from environments folder
-cp environments/.env.db.prod.example .env.db.prod
-cp environments/.env.api.prod.example .env.api.prod
-cp environments/.env.ui.prod.example .env.ui.prod
+# Initialize all env files from templates
+make init-prod
 
 # Generate secrets
 make generate-secrets
@@ -221,6 +201,7 @@ REDIS_PASSWORD=<CHANGE_ME_STRONG_PASSWORD>
 Edit `.env.api.prod`:
 ```env
 AUTH_JWT_SECRET=<CHANGE_ME_GENERATE_WITH_OPENSSL>
+APP_ENCRYPTION_KEY=<CHANGE_ME_GENERATE_WITH_OPENSSL_RAND_HEX_32>
 CORS_ALLOWED_ORIGINS=https://your-domain.com
 ```
 
@@ -280,22 +261,28 @@ This exposes port 3000 for your external reverse proxy to handle SSL termination
 
 ## Makefile Commands
 
+### Initialization
+
+| Command | Description |
+|---------|-------------|
+| `make init-staging` | Copy env templates for staging |
+| `make init-prod` | Copy env templates for production |
+| `make generate-secrets` | Generate secure random secrets |
+| `make auto-ssl` | Auto-generate self-signed SSL certificates |
+
 ### Staging
 
 | Command | Description |
 |---------|-------------|
-| `make staging-up` | Start staging (HTTP) |
-| `make staging-up-seed` | Start with test data (HTTP) |
-| `make staging-up-ssl` | Start with nginx/HTTPS |
-| `make staging-up-ssl-seed` | Start with nginx/HTTPS + test data |
-| `make staging-seed` | Seed test data to running database |
-| `make staging-down` | Stop services (HTTP mode) |
-| `make staging-down-ssl` | Stop services including nginx (SSL mode) |
+| `make staging-up` | Start staging with SSL (default) |
+| `make staging-up seed=true` | Start staging with test data |
+| `make staging-down` | Stop staging services |
 | `make staging-logs` | View all logs |
-| `make staging-ps` | Show running containers |
+| `make staging-logs s=api` | View specific service logs |
 | `make staging-restart` | Restart all services |
-| `make staging-pull` | Pull latest images |
-| `make staging-clean` | Stop and remove volumes (reset DB) |
+| `make staging-restart s=ui` | Restart specific service |
+| `make staging-status` | Show running containers |
+| `make staging-seed` | Seed test data to running DB |
 
 ### Production
 
@@ -304,36 +291,29 @@ This exposes port 3000 for your external reverse proxy to handle SSL termination
 | `make prod-up` | Start production environment |
 | `make prod-down` | Stop all services |
 | `make prod-logs` | View all logs |
-| `make prod-ps` | Show running containers |
+| `make prod-logs s=api` | View specific service logs |
 | `make prod-restart` | Restart all services |
-| `make prod-pull` | Pull latest images |
 
-### Database
-
-| Command | Description |
-|---------|-------------|
-| `make db-shell` | Open PostgreSQL shell |
-| `make db-seed` | Seed test data |
-| `make db-reset` | Reset database (WARNING: deletes all data) |
-| `make db-migrate` | Run migrations manually |
-
-### SSL/HTTPS
+### Database & Redis
 
 | Command | Description |
 |---------|-------------|
-| `make init-ssl` | Generate self-signed certificate (staging/testing) |
-| `make init-ssl-letsencrypt` | Show Let's Encrypt setup instructions |
-| `make ssl-renew` | Reload nginx after certificate renewal |
-| `make staging-up-ssl` | Start staging with nginx/SSL |
+| `make db-shell-staging` | Connect to staging PostgreSQL shell |
+| `make redis-shell-staging` | Connect to staging Redis shell |
+
+### Validation
+
+| Command | Description |
+|---------|-------------|
+| `make check-staging-env` | Verify staging env files exist |
+| `make check-prod-env` | Verify prod env files + warn about CHANGE_ME |
 
 ### Utility
 
 | Command | Description |
 |---------|-------------|
-| `make generate-secrets` | Generate secure secrets |
-| `make status-staging` | Show staging status and URLs |
-| `make status-prod` | Show production status |
-| `make help` | Show all commands |
+| `make help` | Show all available commands |
+| `make clean` | Remove unused Docker resources (prune) |
 
 ---
 
@@ -386,6 +366,7 @@ setup/
 | `DB_PORT` | Yes | 5432 | Database port |
 | `REDIS_HOST` | Yes | redis | Redis host |
 | `AUTH_JWT_SECRET` | Yes | - | JWT signing secret (min 64 chars) |
+| `APP_ENCRYPTION_KEY` | Yes | - | Credential encryption key (32 bytes hex) |
 | `AUTH_PROVIDER` | No | local | Auth mode: local, oidc |
 | `CORS_ALLOWED_ORIGINS` | Yes | - | Allowed CORS origins |
 | `LOG_LEVEL` | No | info | Log level: debug, info, warn, error |
@@ -394,6 +375,7 @@ setup/
 
 | Variable | Required | Default | Description |
 |----------|----------|---------|-------------|
+| `NEXT_PUBLIC_APP_NAME` | No | RediverIO | Application name |
 | `NEXT_PUBLIC_APP_URL` | Yes | http://localhost:3000 | Public app URL |
 | `BACKEND_API_URL` | Yes | http://api:8080 | Internal API URL |
 | `CSRF_SECRET` | Yes | - | CSRF token secret (min 32 chars) |
