@@ -33,7 +33,7 @@ PROD_ENV_FILES    := --env-file .env.db.prod --env-file .env.api.prod --env-file
         staging-up staging-down staging-logs staging-restart \
         prod-up prod-down prod-logs prod-restart \
         db-shell-staging db-shell-prod redis-shell-staging redis-shell-prod \
-        clean prun
+        clean prune check-staging-env check-prod-env
 
 help: ## Show this help
 	@awk 'BEGIN {FS = ":.*?## "} /^[a-zA-Z_-]+:.*?## / {printf "\033[36m%-20s\033[0m %s\n", $$1, $$2}' $(MAKEFILE_LIST)
@@ -78,12 +78,41 @@ auto-ssl: ## Auto-generate dev SSL certificates if missing
 		echo "✓ SSL certificates generated."; \
 	fi
 
+check-staging-env: ## Verify staging env files exist
+	@missing=""; \
+	for f in .env.db.staging .env.api.staging .env.ui.staging .env.nginx.staging .env.versions.staging; do \
+		if [ ! -f "$$f" ]; then missing="$$missing $$f"; fi; \
+	done; \
+	if [ -n "$$missing" ]; then \
+		echo "❌ Missing env files:$$missing"; \
+		echo "   Run 'make init-staging' first."; \
+		exit 1; \
+	fi; \
+	echo "✓ All staging env files present."
+
+check-prod-env: ## Verify production env files exist and have no CHANGE_ME
+	@missing=""; \
+	for f in .env.db.prod .env.api.prod .env.ui.prod .env.nginx.prod .env.versions.prod; do \
+		if [ ! -f "$$f" ]; then missing="$$missing $$f"; fi; \
+	done; \
+	if [ -n "$$missing" ]; then \
+		echo "❌ Missing env files:$$missing"; \
+		echo "   Run 'make init-prod' first."; \
+		exit 1; \
+	fi; \
+	echo "✓ All production env files present."; \
+	if grep -rq "CHANGE_ME\|<CHANGE_ME" .env.*.prod 2>/dev/null; then \
+		echo "⚠️  Warning: Found CHANGE_ME values in production env files!"; \
+		echo "   Please update all placeholders before deploying."; \
+		grep -l "CHANGE_ME\|<CHANGE_ME" .env.*.prod 2>/dev/null | sed 's/^/   - /'; \
+	fi
+
 # =============================================================================
 # Staging Environment
 # =============================================================================
 # Staging now ALWAYS runs with Nginx/SSL enabled for parity with Production.
 
-staging-up: auto-ssl ## Start staging (Default: SSL enabled). Use seed=true to seed DB.
+staging-up: check-staging-env auto-ssl ## Start staging (Default: SSL enabled). Use seed=true to seed DB.
 	@echo "Starting Staging Environment..."
 	@PROFILES="--profile ssl"; \
 	if [ "$(seed)" = "true" ]; then \
@@ -118,7 +147,7 @@ staging-seed: ## Seed test data into running staging database
 # Production Environment
 # =============================================================================
 
-prod-up: ## Start production environment
+prod-up: check-prod-env ## Start production environment
 	@echo "Starting Production Environment..."
 	docker compose -f $(PROD_COMPOSE) $(PROD_ENV_FILES) pull
 	docker compose -f $(PROD_COMPOSE) $(PROD_ENV_FILES) up -d
