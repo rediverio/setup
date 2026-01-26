@@ -403,7 +403,12 @@ setup/
 | `APP_ENCRYPTION_KEY` | Yes | - | Credential encryption key (32 bytes hex) |
 | `AUTH_PROVIDER` | No | local | Auth mode: local, oidc |
 | `CORS_ALLOWED_ORIGINS` | Yes | - | Allowed CORS origins |
+| `CORS_ALLOWED_HEADERS` | No | See below | Allowed CORS headers |
 | `LOG_LEVEL` | No | info | Log level: debug, info, warn, error |
+
+**CORS Headers Default**: `Accept,Authorization,Content-Type,X-Request-ID,X-Admin-API-Key`
+
+> **Note**: `X-Admin-API-Key` header is required for Admin UI authentication.
 
 ### UI Configuration (.env.ui.*)
 
