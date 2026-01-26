@@ -319,6 +319,15 @@ This exposes port 3000 for your external reverse proxy to handle SSL termination
 | `make prod-logs s=api` | View specific service logs |
 | `make prod-restart` | Restart all services |
 
+### Admin Bootstrap
+
+| Command | Description |
+|---------|-------------|
+| `make bootstrap-admin-staging email=<email>` | Create admin for staging |
+| `make bootstrap-admin-staging email=<email> role=<role>` | Create admin with specific role |
+| `make bootstrap-admin-prod email=<email>` | Create admin for production |
+| `make bootstrap-admin-prod email=<email> role=<role>` | Create admin with specific role |
+
 ### Database & Redis
 
 | Command | Description |
