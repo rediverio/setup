@@ -6,6 +6,7 @@
 # Images are pulled from Docker Hub:
 #   - rediverio/api:<version>
 #   - rediverio/ui:<version>
+#   - rediverio/admin-ui:<version>
 #
 # Quick Start:
 #   1. Copy env files:
@@ -23,7 +24,7 @@
 #      docker compose -f docker-compose.prod.yml up -d
 #
 # With specific version:
-#   API_VERSION=v0.2.0 UI_VERSION=v0.2.0 docker compose -f docker-compose.prod.yml up -d
+#   API_VERSION=v0.2.0 UI_VERSION=v0.2.0 ADMIN_UI_VERSION=v0.2.0 docker compose -f docker-compose.prod.yml up -d
 #
 # Commands:
 #   Start:      docker compose -f docker-compose.prod.yml up -d
@@ -38,6 +39,7 @@
 #   - migrate:   Runs migrations (exits after completion)
 #   - api:       Backend API (internal only)
 #   - ui:        Frontend UI (internal only, via nginx)
+#   - admin-ui:  Admin UI (internal only, via nginx)
 #
 # Security Notes:
 #   - Database and Redis are NOT exposed externally
@@ -54,13 +56,15 @@ services:
   # Multi-domain nginx configuration serving:
   #   - UI: ${NGINX_HOST} (e.g., rediver.io)
   #   - API: ${API_HOST} (e.g., api.rediver.io)
+  #   - Admin UI: ${ADMIN_HOST} (e.g., admin.rediver.io)
   #
   # Environment Variables:
   #   - NGINX_HOST: UI hostname (REQUIRED for production)
   #   - API_HOST: API hostname (REQUIRED for production)
+  #   - ADMIN_HOST: Admin UI hostname (REQUIRED for production)
   #
   # Usage:
-  #   NGINX_HOST=rediver.io API_HOST=api.rediver.io \
+  #   NGINX_HOST=rediver.io API_HOST=api.rediver.io ADMIN_HOST=admin.rediver.io \
   #     docker compose -f docker-compose.prod.yml up -d
   nginx:
     image: nginx:1.27-alpine
@@ -73,6 +77,7 @@ services:
     environment:
       - NGINX_HOST=${NGINX_HOST:?NGINX_HOST is required - set in .env.nginx.prod}
       - API_HOST=${API_HOST:?API_HOST is required - set in .env.nginx.prod}
+      - ADMIN_HOST=${ADMIN_HOST:?ADMIN_HOST is required - set in .env.nginx.prod}
     volumes:
       - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
       - ./nginx/templates:/etc/nginx/templates:ro
@@ -81,6 +86,8 @@ services:
       api:
         condition: service_healthy
       ui:
+        condition: service_healthy
+      admin-ui:
         condition: service_healthy
     networks:
       - app-network
@@ -299,6 +306,47 @@ services:
         reservations:
           cpus: '0.5'
           memory: 512M
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "100m"
+        max-file: "5"
+
+  # ---------------------------------------------------------------------------
+  # Admin UI (Next.js) - Platform Administration Console
+  # ---------------------------------------------------------------------------
+  # Image from Docker Hub: rediverio/admin-ui:<version>
+  # Note: NEXT_PUBLIC_* variables are baked into the image at build time
+  # Note: Admin UI is internal only, accessed via nginx reverse proxy
+  admin-ui:
+    image: rediverio/admin-ui:${ADMIN_UI_VERSION:-latest}
+    restart: always
+    env_file:
+      - .env.admin-ui.prod
+    expose:
+      - "3000"
+    # No external ports - nginx handles external traffic
+    depends_on:
+      api:
+        condition: service_healthy
+    healthcheck:
+      test: [ "CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://127.0.0.1:3000/api/health" ]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    networks:
+      - app-network
+    security_opt:
+      - no-new-privileges:true
+    deploy:
+      resources:
+        limits:
+          cpus: '1'
+          memory: 1G
+        reservations:
+          cpus: '0.25'
+          memory: 256M
     logging:
       driver: "json-file"
       options:

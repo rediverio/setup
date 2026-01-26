@@ -6,12 +6,19 @@
 #
 # Upstreams:
 #   - ui_backend: Next.js UI application (port 3000)
+#   - admin_ui_backend: Next.js Admin UI application (port 3000)
 #   - api_backend: Go API server (port 8080)
 # ==============================================================================
 
 # UI Backend (Next.js)
 upstream ui_backend {
     server ui:3000;
+    keepalive 32;
+}
+
+# Admin UI Backend (Next.js)
+upstream admin_ui_backend {
+    server admin-ui:3000;
     keepalive 32;
 }
 

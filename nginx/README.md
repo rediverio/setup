@@ -5,21 +5,21 @@ Nginx reverse proxy configuration for Rediver Platform with multi-domain and SSL
 ## Architecture
 
 ```
-                    ┌─────────────────────────────────────────────────┐
-                    │                     Nginx                        │
-                    │                                                  │
-    Internet ──────►│  ┌─────────────────┐   ┌─────────────────┐      │
-                    │  │ rediver.io      │   │ api.rediver.io  │      │
-                    │  │ (NGINX_HOST)    │   │ (API_HOST)      │      │
-                    │  └────────┬────────┘   └────────┬────────┘      │
-                    │           │                     │               │
-                    └───────────┼─────────────────────┼───────────────┘
-                                │                     │
-                                ▼                     ▼
-                         ┌──────────┐          ┌──────────┐
-                         │    UI    │          │   API    │
-                         │  :3000   │          │  :8080   │
-                         └──────────┘          └──────────┘
+                    ┌─────────────────────────────────────────────────────────────────┐
+                    │                            Nginx                                 │
+                    │                                                                  │
+    Internet ──────►│  ┌─────────────────┐  ┌─────────────────┐  ┌─────────────────┐  │
+                    │  │ rediver.io      │  │ api.rediver.io  │  │admin.rediver.io │  │
+                    │  │ (NGINX_HOST)    │  │ (API_HOST)      │  │ (ADMIN_HOST)    │  │
+                    │  └────────┬────────┘  └────────┬────────┘  └────────┬────────┘  │
+                    │           │                    │                    │           │
+                    └───────────┼────────────────────┼────────────────────┼───────────┘
+                                │                    │                    │
+                                ▼                    ▼                    ▼
+                         ┌──────────┐         ┌──────────┐         ┌──────────┐
+                         │    UI    │         │   API    │         │ Admin UI │
+                         │  :3000   │         │  :8080   │         │  :3000   │
+                         └──────────┘         └──────────┘         └──────────┘
 ```
 
 ## Quick Start
@@ -46,6 +46,7 @@ cp environments/.env.nginx.prod.example .env.nginx.prod
 # 2. Update domains in .env.nginx.prod
 NGINX_HOST=rediver.io
 API_HOST=api.rediver.io
+ADMIN_HOST=admin.rediver.io
 
 # 3. Setup SSL certificates (see SSL section below)
 
@@ -61,6 +62,7 @@ make prod-up
 |----------|-----------------|------------|-------------|
 | `NGINX_HOST` | `localhost` | Required | UI domain (e.g., `rediver.io`) |
 | `API_HOST` | `api.localhost` | Required | API domain (e.g., `api.rediver.io`) |
+| `ADMIN_HOST` | `admin.localhost` | Required | Admin UI domain (e.g., `admin.rediver.io`) |
 
 ### Example Configurations
 
@@ -68,26 +70,29 @@ make prod-up
 ```bash
 NGINX_HOST=localhost
 API_HOST=api.localhost
+ADMIN_HOST=admin.localhost
 ```
 
 **Staging:**
 ```bash
 NGINX_HOST=staging.rediver.io
 API_HOST=api.staging.rediver.io
+ADMIN_HOST=admin.staging.rediver.io
 ```
 
 **Production:**
 ```bash
 NGINX_HOST=rediver.io
 API_HOST=api.rediver.io
+ADMIN_HOST=admin.rediver.io
 ```
 
 ## Multi-Domain Setup
 
-Nginx serves two domains with separate configurations:
+Nginx serves three domains with separate configurations:
 
 ### UI Domain (NGINX_HOST)
-- Serves the Next.js frontend
+- Serves the Next.js tenant frontend
 - Static asset caching
 - WebSocket support for HMR
 
@@ -101,12 +106,19 @@ Nginx serves two domains with separate configurations:
 - WebSocket support for real-time updates
 - Large payload support for agent data (50MB max)
 
+### Admin UI Domain (ADMIN_HOST)
+- Serves the Next.js admin panel
+- Stricter security headers (CSP, robots deny)
+- Stricter rate limiting (5 req/s vs 10 for tenant UI)
+- Static asset caching
+- Robots.txt returns "Disallow: /" (admin should NOT be indexed)
+
 ## SSL Certificates
 
 ### Option 1: Self-Signed (Staging/Development)
 
 ```bash
-# Generate self-signed certificate for both domains
+# Generate self-signed certificate for all domains
 make init-ssl
 
 # Or manually:
@@ -114,7 +126,7 @@ openssl req -x509 -nodes -days 365 -newkey rsa:2048 \
   -keyout nginx/ssl/key.pem \
   -out nginx/ssl/cert.pem \
   -subj "/CN=localhost" \
-  -addext "subjectAltName=DNS:localhost,DNS:api.localhost,DNS:*.rediver.io"
+  -addext "subjectAltName=DNS:localhost,DNS:api.localhost,DNS:admin.localhost,DNS:*.rediver.io"
 ```
 
 ### Option 2: Let's Encrypt (Production)
@@ -126,10 +138,11 @@ sudo apt install certbot
 # 2. Stop any service on port 80
 docker compose down
 
-# 3. Obtain certificates for both domains
+# 3. Obtain certificates for all domains
 sudo certbot certonly --standalone \
   -d rediver.io \
-  -d api.rediver.io
+  -d api.rediver.io \
+  -d admin.rediver.io
 
 # 4. Copy certificates
 sudo cp /etc/letsencrypt/live/rediver.io/fullchain.pem nginx/ssl/cert.pem
@@ -155,6 +168,7 @@ nginx/
 ├── nginx.conf                          # Main nginx configuration
 ├── templates/
 │   ├── 00-upstreams.conf.template      # Shared upstream definitions
+│   ├── admin-ui.conf.template          # Admin UI server block (admin.rediver.io)
 │   ├── api.conf.template               # API server block (api.rediver.io)
 │   └── ui.conf.template                # UI server block (rediver.io)
 ├── ssl/                                # SSL certificates directory
@@ -171,6 +185,7 @@ Different rate limits are configured for different endpoints:
 | Zone | Rate | Burst | Endpoints |
 |------|------|-------|-----------|
 | `ui_general` | 10 req/s | 20 | UI routes |
+| `admin_general` | 5 req/s | 10 | Admin UI routes (stricter) |
 | `api_general` | 30 req/s | 50 | General API (`/api/*`) |
 | `api_auth` | 5 req/s | 10 | Authentication (`/api/v1/auth/*`) |
 | `api_ingest` | 100 req/s | 200 | Agent data ingest (`/api/v1/agent/*`) |

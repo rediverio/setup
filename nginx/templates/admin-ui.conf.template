@@ -1,0 +1,174 @@
+# ==============================================================================
+# Nginx Configuration for Rediver Admin UI (admin.rediver.io)
+# ==============================================================================
+# Admin UI-specific nginx configuration with:
+# - SSL/TLS support
+# - HTTP to HTTPS redirect
+# - Stricter security headers (CSP, robots deny)
+# - Caching for static assets
+# - Rate limiting (stricter than tenant UI)
+#
+# Environment Variables:
+#   - ADMIN_HOST: Admin UI hostname (default: admin.localhost)
+#
+# Usage:
+#   Set ADMIN_HOST environment variable in docker-compose or .env file.
+# ==============================================================================
+
+# Rate limiting zone for Admin UI (stricter: 5 requests per second per IP)
+limit_req_zone $binary_remote_addr zone=admin_general:10m rate=5r/s;
+
+# ===========================================================================
+# HTTP Server (Redirect to HTTPS or serve if behind proxy)
+# ===========================================================================
+server {
+    listen 80;
+    listen [::]:80;
+    server_name ${ADMIN_HOST};
+
+    # Health check endpoint (for load balancers)
+    location /health {
+        access_log off;
+        return 200 'healthy';
+        add_header Content-Type text/plain;
+    }
+
+    # Main application
+    location / {
+        # Redirect to HTTPS if not behind a proxy
+        if ($redirect_to_https) {
+            return 301 https://$host$request_uri;
+        }
+
+        # Serve request if behind proxy (Cloudflare Flexible SSL, etc.)
+        proxy_pass http://admin_ui_backend;
+        proxy_http_version 1.1;
+
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection 'upgrade';
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto https;
+        proxy_set_header X-Forwarded-Host $host;
+
+        proxy_connect_timeout 60s;
+        proxy_send_timeout 60s;
+        proxy_read_timeout 60s;
+        proxy_cache_bypass $http_upgrade;
+        proxy_buffering off;
+    }
+
+    # Next.js Static Assets (when behind proxy)
+    location /_next/static/ {
+        if ($redirect_to_https) {
+            return 301 https://$host$request_uri;
+        }
+        proxy_pass http://admin_ui_backend;
+        expires 1y;
+        add_header Cache-Control "public, immutable";
+        access_log off;
+    }
+}
+
+# ===========================================================================
+# HTTPS Server (Admin Application)
+# ===========================================================================
+server {
+    listen 443 ssl;
+    listen [::]:443 ssl;
+    http2 on;
+    server_name ${ADMIN_HOST};
+
+    # -----------------------------------------------------------------------
+    # SSL Configuration
+    # -----------------------------------------------------------------------
+    ssl_certificate /etc/nginx/ssl/cert.pem;
+    ssl_certificate_key /etc/nginx/ssl/key.pem;
+
+    ssl_protocols TLSv1.2 TLSv1.3;
+    ssl_ciphers 'ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384';
+    ssl_prefer_server_ciphers off;
+
+    ssl_session_cache shared:SSL:10m;
+    ssl_session_timeout 10m;
+    ssl_session_tickets off;
+
+    # -----------------------------------------------------------------------
+    # Security Headers (Stricter for Admin Panel)
+    # -----------------------------------------------------------------------
+    add_header Strict-Transport-Security "max-age=31536000; includeSubDomains; preload" always;
+    add_header X-Frame-Options "DENY" always;
+    add_header X-Content-Type-Options "nosniff" always;
+    add_header X-XSS-Protection "1; mode=block" always;
+    add_header Referrer-Policy "strict-origin-when-cross-origin" always;
+    # CSP header - adjust connect-src based on your API URL
+    add_header Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; font-src 'self' data:; connect-src 'self' https://${API_HOST};" always;
+
+    # -----------------------------------------------------------------------
+    # Admin UI Application (Default)
+    # -----------------------------------------------------------------------
+    location / {
+        # Stricter rate limiting for admin (burst=10 vs 20 for tenant)
+        limit_req zone=admin_general burst=10 nodelay;
+
+        proxy_pass http://admin_ui_backend;
+        proxy_http_version 1.1;
+
+        # WebSocket support
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection 'upgrade';
+
+        # Proxy headers
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header X-Forwarded-Host $host;
+        proxy_set_header X-Forwarded-Port $server_port;
+
+        # Timeouts
+        proxy_connect_timeout 60s;
+        proxy_send_timeout 60s;
+        proxy_read_timeout 60s;
+
+        proxy_cache_bypass $http_upgrade;
+        proxy_buffering off;
+    }
+
+    # -----------------------------------------------------------------------
+    # Next.js Static Assets
+    # -----------------------------------------------------------------------
+    location /_next/static/ {
+        proxy_pass http://admin_ui_backend;
+        expires 1y;
+        add_header Cache-Control "public, immutable";
+        access_log off;
+    }
+
+    # -----------------------------------------------------------------------
+    # Health Check Endpoints
+    # -----------------------------------------------------------------------
+    location /health {
+        proxy_pass http://admin_ui_backend/api/health;
+        access_log off;
+    }
+
+    # -----------------------------------------------------------------------
+    # Favicon
+    # -----------------------------------------------------------------------
+    location = /favicon.ico {
+        proxy_pass http://admin_ui_backend;
+        expires 1M;
+        add_header Cache-Control "public";
+        access_log off;
+    }
+
+    # -----------------------------------------------------------------------
+    # Robots.txt - Deny all crawlers (Admin panel should NOT be indexed)
+    # -----------------------------------------------------------------------
+    location = /robots.txt {
+        add_header Content-Type text/plain;
+        return 200 "User-agent: *\nDisallow: /\n";
+    }
+}

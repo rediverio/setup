@@ -3,7 +3,7 @@
 # =============================================================================
 # Complete staging setup with API, UI, database, and automatic migrations.
 #
-# Images are pulled from Docker Hub: rediverio/api, rediverio/ui
+# Images are pulled from Docker Hub: rediverio/api, rediverio/ui, rediverio/admin-ui
 #
 # Quick Start:
 #   1. Copy env files:
@@ -17,7 +17,7 @@
 #      docker compose -f docker-compose.staging.yml up -d
 #
 # With specific version:
-#   API_VERSION=v0.2.0 UI_VERSION=v0.2.0 docker compose -f docker-compose.staging.yml up -d
+#   API_VERSION=v0.2.0 UI_VERSION=v0.2.0 ADMIN_UI_VERSION=v0.2.0 docker compose -f docker-compose.staging.yml up -d
 #
 # With test data:
 #   docker compose -f docker-compose.staging.yml --profile seed up -d
@@ -43,6 +43,7 @@
 #   - seed:      Seeds test data (--profile seed)
 #   - api:       Backend API (internal only)
 #   - ui:        Frontend UI (port 3000, or via nginx with --profile ssl)
+#   - admin-ui:  Admin UI (port 3001, or via nginx with --profile ssl)
 #
 # Security Notes:
 #   - Database and Redis are NOT exposed by default
@@ -58,13 +59,15 @@ services:
   # Multi-domain nginx configuration serving:
   #   - UI: ${NGINX_HOST} (e.g., localhost, rediver.io)
   #   - API: ${API_HOST} (e.g., api.localhost, api.rediver.io)
+  #   - Admin UI: ${ADMIN_HOST} (e.g., admin.localhost, admin.rediver.io)
   #
   # Environment Variables:
   #   - NGINX_HOST: UI hostname (default: localhost)
   #   - API_HOST: API hostname (default: api.localhost)
+  #   - ADMIN_HOST: Admin UI hostname (default: admin.localhost)
   #
   # Usage:
-  #   NGINX_HOST=staging.example.com API_HOST=api.staging.example.com \
+  #   NGINX_HOST=staging.example.com API_HOST=api.staging.example.com ADMIN_HOST=admin.staging.example.com \
   #     docker compose --profile ssl up -d
   nginx:
     image: nginx:1.27-alpine
@@ -77,6 +80,7 @@ services:
     environment:
       - NGINX_HOST=${NGINX_HOST:-localhost}
       - API_HOST=${API_HOST:-api.localhost}
+      - ADMIN_HOST=${ADMIN_HOST:-admin.localhost}
     volumes:
       - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
       - ./nginx/templates:/etc/nginx/templates:ro
@@ -85,6 +89,8 @@ services:
       api:
         condition: service_healthy
       ui:
+        condition: service_healthy
+      admin-ui:
         condition: service_healthy
     networks:
       - app-network
@@ -350,6 +356,43 @@ services:
         reservations:
           cpus: '0.25'
           memory: 256M
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "100m"
+        max-file: "3"
+
+  # ---------------------------------------------------------------------------
+  # Admin UI (Next.js) - Platform Administration Console
+  # ---------------------------------------------------------------------------
+  # Image from Docker Hub: rediverio/admin-ui:<version>
+  # Note: NEXT_PUBLIC_* variables are baked into the image at build time
+  admin-ui:
+    image: rediverio/admin-ui:${ADMIN_UI_VERSION:-staging-latest}
+    restart: unless-stopped
+    env_file:
+      - .env.admin-ui.staging
+    ports:
+      - "${ADMIN_UI_PORT:-3001}:3000"
+    depends_on:
+      api:
+        condition: service_healthy
+    healthcheck:
+      test: [ "CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://127.0.0.1:3000/api/health" ]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    networks:
+      - app-network
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 512M
+        reservations:
+          cpus: '0.1'
+          memory: 128M
     logging:
       driver: "json-file"
       options:
